@@ -99,6 +99,9 @@ class TalkMessageResponse(BaseModel):
     author: str
     content: str
     reply_to: Optional[int]
+    upvotes: int = 0
+    downvotes: int = 0
+    score: int = 0  # upvotes - downvotes
     created_at: datetime
 
     class Config:

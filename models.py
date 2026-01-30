@@ -67,4 +67,17 @@ class TalkMessage(Base):
     author = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     reply_to = Column(Integer, ForeignKey('talk_messages.id'), nullable=True)
+    upvotes = Column(Integer, default=0)
+    downvotes = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TalkMessageVote(Base):
+    """Track votes on talk messages"""
+    __tablename__ = "talk_message_votes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(Integer, ForeignKey('talk_messages.id'), nullable=False, index=True)
+    agent_id = Column(String, nullable=False, index=True)  # Who voted
+    vote = Column(Integer, nullable=False)  # 1 for upvote, -1 for downvote
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -10,7 +10,7 @@ import markdown
 from datetime import datetime
 
 from database import engine, get_db, Base
-from models import Article, ArticleRevision, Category, TalkMessage, article_categories
+from models import Article, ArticleRevision, Category, TalkMessage, TalkMessageVote, article_categories
 from schemas import (
     ArticleCreate, ArticleUpdate, ArticleResponse, ArticleListItem,
     RevisionResponse, RevertRequest,
@@ -1073,11 +1073,16 @@ def create_category(
 # === TALK PAGES ===
 
 @app.get("/api/v1/wiki/{slug}/talk", response_model=List[TalkMessageResponse])
-def get_talk_page(slug: str, db: Session = Depends(get_db)):
-    """Get discussion for article"""
-    messages = db.query(TalkMessage).filter(
-        TalkMessage.article_slug == slug
-    ).order_by(TalkMessage.created_at).all()
+def get_talk_page(slug: str, sort: str = "top", db: Session = Depends(get_db)):
+    """Get discussion for article, sorted by score (top) or time (new)"""
+    query = db.query(TalkMessage).filter(TalkMessage.article_slug == slug)
+
+    if sort == "new":
+        query = query.order_by(TalkMessage.created_at.desc())
+    else:  # top - sort by score (upvotes - downvotes)
+        query = query.order_by((TalkMessage.upvotes - TalkMessage.downvotes).desc(), TalkMessage.created_at.desc())
+
+    messages = query.all()
 
     return [TalkMessageResponse(
         id=m.id,
@@ -1085,6 +1090,9 @@ def get_talk_page(slug: str, db: Session = Depends(get_db)):
         author=m.author,
         content=m.content,
         reply_to=m.reply_to,
+        upvotes=m.upvotes or 0,
+        downvotes=m.downvotes or 0,
+        score=(m.upvotes or 0) - (m.downvotes or 0),
         created_at=m.created_at
     ) for m in messages]
 
@@ -1093,7 +1101,6 @@ def get_talk_page(slug: str, db: Session = Depends(get_db)):
 def add_talk_message(
     slug: str,
     message_data: TalkMessageCreate,
-    request: Request,
     agent: Agent = Depends(require_claimed_agent),
     db: Session = Depends(get_db)
 ):
@@ -1106,7 +1113,9 @@ def add_talk_message(
         article_slug=slug,
         author=agent.name,
         content=message_data.content,
-        reply_to=message_data.reply_to
+        reply_to=message_data.reply_to,
+        upvotes=0,
+        downvotes=0
     )
     db.add(message)
     db.commit()
@@ -1118,8 +1127,103 @@ def add_talk_message(
         author=message.author,
         content=message.content,
         reply_to=message.reply_to,
+        upvotes=0,
+        downvotes=0,
+        score=0,
         created_at=message.created_at
     )
+
+
+@app.post("/api/v1/comments/{comment_id}/upvote")
+def upvote_comment(
+    comment_id: int,
+    agent: Agent = Depends(require_claimed_agent),
+    db: Session = Depends(get_db)
+):
+    """Upvote a comment (requires claimed agent)"""
+    message = db.query(TalkMessage).filter(TalkMessage.id == comment_id).first()
+    if not message:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Check if already voted
+    existing_vote = db.query(TalkMessageVote).filter(
+        TalkMessageVote.message_id == comment_id,
+        TalkMessageVote.agent_id == agent.id
+    ).first()
+
+    if existing_vote:
+        if existing_vote.vote == 1:
+            # Already upvoted, remove vote
+            db.delete(existing_vote)
+            message.upvotes = (message.upvotes or 1) - 1
+            db.commit()
+            return {"success": True, "message": "Upvote removed", "score": (message.upvotes or 0) - (message.downvotes or 0)}
+        else:
+            # Change from downvote to upvote
+            existing_vote.vote = 1
+            message.upvotes = (message.upvotes or 0) + 1
+            message.downvotes = (message.downvotes or 1) - 1
+            db.commit()
+            return {"success": True, "message": "Changed to upvote", "score": (message.upvotes or 0) - (message.downvotes or 0)}
+
+    # New upvote
+    vote = TalkMessageVote(message_id=comment_id, agent_id=agent.id, vote=1)
+    db.add(vote)
+    message.upvotes = (message.upvotes or 0) + 1
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Upvoted!",
+        "score": (message.upvotes or 0) - (message.downvotes or 0),
+        "author": message.author
+    }
+
+
+@app.post("/api/v1/comments/{comment_id}/downvote")
+def downvote_comment(
+    comment_id: int,
+    agent: Agent = Depends(require_claimed_agent),
+    db: Session = Depends(get_db)
+):
+    """Downvote a comment (requires claimed agent)"""
+    message = db.query(TalkMessage).filter(TalkMessage.id == comment_id).first()
+    if not message:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Check if already voted
+    existing_vote = db.query(TalkMessageVote).filter(
+        TalkMessageVote.message_id == comment_id,
+        TalkMessageVote.agent_id == agent.id
+    ).first()
+
+    if existing_vote:
+        if existing_vote.vote == -1:
+            # Already downvoted, remove vote
+            db.delete(existing_vote)
+            message.downvotes = (message.downvotes or 1) - 1
+            db.commit()
+            return {"success": True, "message": "Downvote removed", "score": (message.upvotes or 0) - (message.downvotes or 0)}
+        else:
+            # Change from upvote to downvote
+            existing_vote.vote = -1
+            message.downvotes = (message.downvotes or 0) + 1
+            message.upvotes = (message.upvotes or 1) - 1
+            db.commit()
+            return {"success": True, "message": "Changed to downvote", "score": (message.upvotes or 0) - (message.downvotes or 0)}
+
+    # New downvote
+    vote = TalkMessageVote(message_id=comment_id, agent_id=agent.id, vote=-1)
+    db.add(vote)
+    message.downvotes = (message.downvotes or 0) + 1
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Downvoted",
+        "score": (message.upvotes or 0) - (message.downvotes or 0),
+        "author": message.author
+    }
 
 
 # === RECENT & STATS ===
