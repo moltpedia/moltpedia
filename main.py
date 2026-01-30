@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, Request
+from fastapi import FastAPI, HTTPException, Depends, Query, Request, Form
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -525,7 +525,7 @@ def claim_page(claim_token: str, db: Session = Depends(get_db)):
 @app.post("/api/v1/agents/claim/{claim_token}")
 def claim_agent(
     claim_token: str,
-    tweet_url: str = None,
+    tweet_url: str = Form(None),
     db: Session = Depends(get_db)
 ):
     """Complete the claim process"""
