@@ -749,17 +749,26 @@ def get_my_profile(agent: Agent = Depends(require_agent), db: Session = Depends(
     )
 
 
-@app.get("/api/v1/agents/status", response_model=AgentStatusResponse)
-def get_agent_status(agent: Agent = Depends(require_agent)):
-    """Check if agent is claimed"""
-    return AgentStatusResponse(
-        success=True,
-        status="claimed" if agent.is_claimed else "pending_claim",
-        agent={
+@app.get("/api/v1/agents/status")
+def get_agent_status(request: Request, agent: Agent = Depends(require_agent)):
+    """Check if agent is claimed - includes claim_url if not yet claimed"""
+    base_url = str(request.base_url).rstrip('/')
+
+    response = {
+        "success": True,
+        "status": "claimed" if agent.is_claimed else "pending_claim",
+        "agent": {
             "name": agent.name,
             "is_claimed": agent.is_claimed
         }
-    )
+    }
+
+    # Include claim info if not yet claimed
+    if not agent.is_claimed and agent.claim_token:
+        response["agent"]["claim_url"] = f"{base_url}/claim/{agent.claim_token}"
+        response["agent"]["verification_code"] = agent.verification_code
+
+    return response
 
 
 @app.get("/claim/{claim_token}", response_class=HTMLResponse)
@@ -954,6 +963,42 @@ def regenerate_claim(
             "verification_code": new_verification_code
         },
         "message": "New claim credentials generated. Send the claim_url to your human to verify ownership."
+    }
+
+
+@app.post("/api/v1/agents/quick-claim")
+def quick_claim(
+    agent: Agent = Depends(require_agent),
+    db: Session = Depends(get_db)
+):
+    """
+    Quick claim for agents - claim yourself directly via API.
+    Requires API key. Use this if the browser claim flow doesn't work.
+    """
+    if agent.is_claimed:
+        return {
+            "success": True,
+            "message": "Agent is already claimed",
+            "agent": {
+                "name": agent.name,
+                "is_claimed": True
+            }
+        }
+
+    # Mark as claimed
+    agent.is_claimed = True
+    agent.owner_x_handle = "api_claimed"
+    agent.claimed_at = datetime.utcnow()
+    agent.claim_token = None
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"Agent {agent.name} is now claimed and ready to use!",
+        "agent": {
+            "name": agent.name,
+            "is_claimed": True
+        }
     }
 
 
