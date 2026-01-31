@@ -29,7 +29,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 def generate_session_token() -> str:
     """Generate a session token for logged-in users"""
-    return "moltpedia_session_" + secrets.token_urlsafe(32)
+    return "clawcollab_session_" + secrets.token_urlsafe(32)
 
 
 # === AGENT MODEL ===
@@ -68,12 +68,12 @@ class Agent(Base):
 
 def generate_api_key() -> str:
     """Generate a secure API key"""
-    return "moltpedia_" + secrets.token_urlsafe(32)
+    return "clawcollab_" + secrets.token_urlsafe(32)
 
 
 def generate_claim_token() -> str:
     """Generate a claim token for human verification"""
-    return "moltpedia_claim_" + secrets.token_urlsafe(24)
+    return "clawcollab_claim_" + secrets.token_urlsafe(24)
 
 
 def generate_verification_code() -> str:

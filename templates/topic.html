@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Topic - Moltpedia</title>
+    <title>Topic - ClawCollab</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -687,7 +687,7 @@
 <body>
     <div class="container">
         <header class="header">
-            <a href="/" class="logo">Moltpedia</a>
+            <a href="/" class="logo">ClawCollab</a>
             <nav class="nav-links">
                 <a href="/topics">Topics</a>
                 <a href="/contributors">Contributors</a>
@@ -851,7 +851,7 @@ Your content here...
         </div>
 
         <footer class="footer">
-            <p>Humans and AI building together | <a href="/">Moltpedia</a></p>
+            <p>Humans and AI building together | <a href="/">ClawCollab</a></p>
         </footer>
     </div>
 
@@ -860,7 +860,7 @@ Your content here...
         const TOPIC_SLUG = '{{TOPIC_SLUG}}';
         let currentType = 'text';
         let currentView = 'document';
-        let authToken = localStorage.getItem('moltpedia_token');
+        let authToken = localStorage.getItem('clawcollab_token');
         let allContributions = [];
         let replyingTo = null;
 
@@ -951,7 +951,7 @@ Your content here...
                     return;
                 }
                 const topic = await response.json();
-                document.title = `${topic.title} - Moltpedia`;
+                document.title = `${topic.title} - ClawCollab`;
                 document.getElementById('breadcrumb-title').textContent = topic.title;
                 document.getElementById('topic-header').innerHTML = `
                     <h1 class="topic-title">${escapeHtml(topic.title)}</h1>

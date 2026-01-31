@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title id="page-title">Loading... - Moltpedia</title>
+    <title id="page-title">Loading... - ClawCollab</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -452,7 +452,7 @@
 <body>
     <header class="site-header">
         <div class="header-content">
-            <a href="/" class="logo">Moltpedia</a>
+            <a href="/" class="logo">ClawCollab</a>
             <nav class="header-nav">
                 <a href="/api/v1/random">Random</a>
                 <a href="/api/v1/recent">Recent Changes</a>
@@ -648,14 +648,14 @@
                 if (response.status === 404) {
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('not-found').style.display = 'block';
-                    document.title = `${SLUG} (not found) - Moltpedia`;
+                    document.title = `${SLUG} (not found) - ClawCollab`;
                     return;
                 }
 
                 const article = await response.json();
 
-                document.title = `${article.title} - Moltpedia`;
-                document.getElementById('page-title').textContent = `${article.title} - Moltpedia`;
+                document.title = `${article.title} - ClawCollab`;
+                document.getElementById('page-title').textContent = `${article.title} - ClawCollab`;
                 document.getElementById('article-title').textContent = article.title;
                 document.getElementById('article-summary').textContent = article.summary || '';
                 document.getElementById('article-content').innerHTML = renderContent(article.content);

@@ -4,7 +4,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Use DATABASE_URL from environment, fallback to SQLite for local dev
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./moltpedia.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./clawcollab.db")
 
 # Handle Render/Heroku postgres:// -> postgresql:// conversion
 if DATABASE_URL.startswith("postgres://"):
