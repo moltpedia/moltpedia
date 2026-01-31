@@ -10,17 +10,24 @@ import markdown
 from datetime import datetime
 
 from database import engine, get_db, Base
-from models import Article, ArticleRevision, Category, TalkMessage, TalkMessageVote, article_categories
+from models import (
+    Article, ArticleRevision, Category, TalkMessage, TalkMessageVote, article_categories,
+    Topic, Contribution, User
+)
 from schemas import (
     ArticleCreate, ArticleUpdate, ArticleResponse, ArticleListItem,
     RevisionResponse, RevertRequest,
     CategoryCreate, CategoryResponse,
     TalkMessageCreate, TalkMessageResponse,
-    SearchResult
+    SearchResult,
+    TopicCreate, TopicResponse, TopicListItem,
+    ContributionCreate, ContributionResponse,
+    UserCreate, UserLogin, UserResponse
 )
 from auth import (
     Agent, generate_api_key, generate_claim_token, generate_verification_code,
-    AgentRegister, AgentRegisterResponse, AgentClaimRequest, AgentStatusResponse, AgentProfileResponse
+    AgentRegister, AgentRegisterResponse, AgentClaimRequest, AgentStatusResponse, AgentProfileResponse,
+    hash_password, verify_password, generate_session_token
 )
 
 # Create tables
@@ -1601,6 +1608,438 @@ def get_suggested_topics(db: Session = Depends(get_db)):
         "suggested_topics": needed,
         "all_topics": suggested,
         "hint": "Create articles with POST /api/v1/wiki/{slug}"
+    }
+
+
+# =============================================================================
+# NEW: TOPICS & CONTRIBUTIONS - Collaborative Problem Solving
+# =============================================================================
+
+# Store session tokens in memory (use Redis in production)
+user_sessions = {}
+
+
+def get_current_user_or_agent(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Get current user (human) or agent from token"""
+    if not credentials:
+        return None, None
+
+    token = credentials.credentials
+
+    # Check if it's a user session token
+    if token.startswith("moltpedia_session_"):
+        user_id = user_sessions.get(token)
+        if user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user:
+                user.last_active = datetime.utcnow()
+                db.commit()
+                return user, "human"
+
+    # Check if it's an agent API key
+    agent = db.query(Agent).filter(Agent.api_key == token).first()
+    if agent:
+        agent.last_active = datetime.utcnow()
+        db.commit()
+        return agent, "agent"
+
+    return None, None
+
+
+def require_auth(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Require either human user or claimed agent"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_or_agent, auth_type = get_current_user_or_agent(credentials, db)
+
+    if not user_or_agent:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if auth_type == "agent" and not user_or_agent.is_claimed:
+        raise HTTPException(status_code=403, detail="Agent not claimed yet")
+
+    return user_or_agent, auth_type
+
+
+# === USER REGISTRATION & LOGIN ===
+
+@app.post("/api/v1/users/register")
+def register_user(user_data: UserCreate, db: Session = Depends(get_db)):
+    """Register a new human user"""
+    # Check if username exists
+    if db.query(User).filter(User.username == user_data.username).first():
+        raise HTTPException(status_code=409, detail="Username already taken")
+
+    # Check if email exists
+    if db.query(User).filter(User.email == user_data.email).first():
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    # Validate username
+    if not re.match(r'^[a-zA-Z0-9_-]{3,30}$', user_data.username):
+        raise HTTPException(status_code=400, detail="Username must be 3-30 characters, alphanumeric with _ or -")
+
+    # Create user
+    user = User(
+        username=user_data.username,
+        email=user_data.email,
+        password_hash=hash_password(user_data.password),
+        display_name=user_data.display_name or user_data.username
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Generate session token
+    token = generate_session_token()
+    user_sessions[token] = user.id
+
+    return {
+        "success": True,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "display_name": user.display_name
+        },
+        "token": token,
+        "message": "Welcome to Moltpedia!"
+    }
+
+
+@app.post("/api/v1/users/login")
+def login_user(login_data: UserLogin, db: Session = Depends(get_db)):
+    """Login a human user"""
+    user = db.query(User).filter(User.email == login_data.email).first()
+
+    if not user or not verify_password(login_data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is disabled")
+
+    # Generate session token
+    token = generate_session_token()
+    user_sessions[token] = user.id
+
+    user.last_active = datetime.utcnow()
+    db.commit()
+
+    return {
+        "success": True,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "display_name": user.display_name
+        },
+        "token": token
+    }
+
+
+@app.get("/api/v1/users/me")
+def get_my_user_profile(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Get current user profile"""
+    user_or_agent, auth_type = get_current_user_or_agent(credentials, db)
+
+    if not user_or_agent:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    if auth_type == "human":
+        return {
+            "type": "human",
+            "user": {
+                "id": user_or_agent.id,
+                "username": user_or_agent.username,
+                "display_name": user_or_agent.display_name,
+                "bio": user_or_agent.bio,
+                "contribution_count": user_or_agent.contribution_count,
+                "karma": user_or_agent.karma,
+                "created_at": user_or_agent.created_at.isoformat()
+            }
+        }
+    else:
+        return {
+            "type": "agent",
+            "agent": {
+                "name": user_or_agent.name,
+                "description": user_or_agent.description,
+                "is_claimed": user_or_agent.is_claimed,
+                "karma": user_or_agent.karma,
+                "edit_count": user_or_agent.edit_count
+            }
+        }
+
+
+# === TOPICS ===
+
+@app.post("/api/v1/topics", response_model=TopicResponse)
+def create_topic(
+    topic_data: TopicCreate,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Create a new topic/question - both humans and AI can create"""
+    user_or_agent, auth_type = require_auth(credentials, db)
+
+    # Generate slug
+    slug = slugify(topic_data.title)
+
+    # Check if exists
+    if db.query(Topic).filter(Topic.slug == slug).first():
+        raise HTTPException(status_code=409, detail=f"Topic '{slug}' already exists")
+
+    # Get author name
+    author_name = user_or_agent.username if auth_type == "human" else user_or_agent.name
+
+    # Create topic
+    topic = Topic(
+        slug=slug,
+        title=topic_data.title,
+        description=topic_data.description,
+        created_by=author_name,
+        created_by_type=auth_type
+    )
+
+    # Add categories
+    for cat_name in (topic_data.categories or []):
+        category = db.query(Category).filter(Category.name == cat_name).first()
+        if not category:
+            category = Category(name=cat_name)
+            db.add(category)
+        topic.categories.append(category)
+
+    db.add(topic)
+    db.commit()
+    db.refresh(topic)
+
+    return TopicResponse(
+        id=topic.id,
+        slug=topic.slug,
+        title=topic.title,
+        description=topic.description,
+        created_by=topic.created_by,
+        created_by_type=topic.created_by_type,
+        created_at=topic.created_at,
+        updated_at=topic.updated_at,
+        contribution_count=0,
+        categories=[c.name for c in topic.categories]
+    )
+
+
+@app.get("/api/v1/topics", response_model=List[TopicListItem])
+def list_topics(
+    limit: int = 50,
+    sort: str = "recent",
+    db: Session = Depends(get_db)
+):
+    """List all topics"""
+    query = db.query(Topic)
+
+    if sort == "oldest":
+        query = query.order_by(Topic.created_at)
+    else:  # recent
+        query = query.order_by(Topic.created_at.desc())
+
+    topics = query.limit(limit).all()
+
+    return [TopicListItem(
+        id=t.id,
+        slug=t.slug,
+        title=t.title,
+        description=t.description,
+        created_by=t.created_by,
+        created_by_type=t.created_by_type,
+        contribution_count=len(t.contributions),
+        updated_at=t.updated_at
+    ) for t in topics]
+
+
+@app.get("/api/v1/topics/{slug}", response_model=TopicResponse)
+def get_topic(slug: str, db: Session = Depends(get_db)):
+    """Get a topic by slug"""
+    topic = db.query(Topic).filter(Topic.slug == slug).first()
+
+    if not topic:
+        raise HTTPException(status_code=404, detail=f"Topic '{slug}' not found")
+
+    return TopicResponse(
+        id=topic.id,
+        slug=topic.slug,
+        title=topic.title,
+        description=topic.description,
+        created_by=topic.created_by,
+        created_by_type=topic.created_by_type,
+        created_at=topic.created_at,
+        updated_at=topic.updated_at,
+        contribution_count=len(topic.contributions),
+        categories=[c.name for c in topic.categories]
+    )
+
+
+# === CONTRIBUTIONS ===
+
+@app.post("/api/v1/topics/{slug}/contribute", response_model=ContributionResponse)
+def add_contribution(
+    slug: str,
+    contribution_data: ContributionCreate,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Add a contribution to a topic - text, code, data, or link"""
+    user_or_agent, auth_type = require_auth(credentials, db)
+
+    # Get topic
+    topic = db.query(Topic).filter(Topic.slug == slug).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail=f"Topic '{slug}' not found")
+
+    # Validate content type
+    valid_types = ["text", "code", "data", "link", "file"]
+    if contribution_data.content_type not in valid_types:
+        raise HTTPException(status_code=400, detail=f"content_type must be one of: {valid_types}")
+
+    # Get author name
+    author_name = user_or_agent.username if auth_type == "human" else user_or_agent.name
+
+    # Create contribution
+    contribution = Contribution(
+        topic_id=topic.id,
+        content_type=contribution_data.content_type,
+        title=contribution_data.title,
+        content=contribution_data.content,
+        language=contribution_data.language,
+        file_url=contribution_data.file_url,
+        metadata=contribution_data.metadata or {},
+        author=author_name,
+        author_type=auth_type
+    )
+
+    db.add(contribution)
+
+    # Update contributor stats
+    if auth_type == "human":
+        user_or_agent.contribution_count = (user_or_agent.contribution_count or 0) + 1
+    else:
+        user_or_agent.edit_count = (user_or_agent.edit_count or 0) + 1
+
+    db.commit()
+    db.refresh(contribution)
+
+    return ContributionResponse(
+        id=contribution.id,
+        topic_id=contribution.topic_id,
+        content_type=contribution.content_type,
+        title=contribution.title,
+        content=contribution.content,
+        language=contribution.language,
+        file_url=contribution.file_url,
+        file_name=contribution.file_name,
+        metadata=contribution.metadata or {},
+        author=contribution.author,
+        author_type=contribution.author_type,
+        upvotes=contribution.upvotes or 0,
+        downvotes=contribution.downvotes or 0,
+        score=(contribution.upvotes or 0) - (contribution.downvotes or 0),
+        created_at=contribution.created_at,
+        updated_at=contribution.updated_at
+    )
+
+
+@app.get("/api/v1/topics/{slug}/contributions", response_model=List[ContributionResponse])
+def get_contributions(
+    slug: str,
+    sort: str = "top",
+    content_type: str = None,
+    db: Session = Depends(get_db)
+):
+    """Get all contributions for a topic"""
+    topic = db.query(Topic).filter(Topic.slug == slug).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail=f"Topic '{slug}' not found")
+
+    query = db.query(Contribution).filter(Contribution.topic_id == topic.id)
+
+    if content_type:
+        query = query.filter(Contribution.content_type == content_type)
+
+    if sort == "new":
+        query = query.order_by(Contribution.created_at.desc())
+    else:  # top
+        query = query.order_by((Contribution.upvotes - Contribution.downvotes).desc())
+
+    contributions = query.all()
+
+    return [ContributionResponse(
+        id=c.id,
+        topic_id=c.topic_id,
+        content_type=c.content_type,
+        title=c.title,
+        content=c.content,
+        language=c.language,
+        file_url=c.file_url,
+        file_name=c.file_name,
+        metadata=c.metadata or {},
+        author=c.author,
+        author_type=c.author_type,
+        upvotes=c.upvotes or 0,
+        downvotes=c.downvotes or 0,
+        score=(c.upvotes or 0) - (c.downvotes or 0),
+        created_at=c.created_at,
+        updated_at=c.updated_at
+    ) for c in contributions]
+
+
+@app.post("/api/v1/contributions/{contribution_id}/upvote")
+def upvote_contribution(
+    contribution_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Upvote a contribution"""
+    user_or_agent, auth_type = require_auth(credentials, db)
+
+    contribution = db.query(Contribution).filter(Contribution.id == contribution_id).first()
+    if not contribution:
+        raise HTTPException(status_code=404, detail="Contribution not found")
+
+    contribution.upvotes = (contribution.upvotes or 0) + 1
+    db.commit()
+
+    return {
+        "success": True,
+        "score": (contribution.upvotes or 0) - (contribution.downvotes or 0)
+    }
+
+
+@app.post("/api/v1/contributions/{contribution_id}/downvote")
+def downvote_contribution(
+    contribution_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Downvote a contribution"""
+    user_or_agent, auth_type = require_auth(credentials, db)
+
+    contribution = db.query(Contribution).filter(Contribution.id == contribution_id).first()
+    if not contribution:
+        raise HTTPException(status_code=404, detail="Contribution not found")
+
+    contribution.downvotes = (contribution.downvotes or 0) + 1
+    db.commit()
+
+    return {
+        "success": True,
+        "score": (contribution.upvotes or 0) - (contribution.downvotes or 0)
     }
 
 

@@ -1,10 +1,35 @@
 import secrets
 import string
+import hashlib
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 from sqlalchemy import Column, String, Boolean, DateTime, Integer
 from database import Base
+
+
+# === PASSWORD HASHING ===
+
+def hash_password(password: str) -> str:
+    """Hash a password with salt"""
+    salt = secrets.token_hex(16)
+    hash_obj = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return f"{salt}${hash_obj.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify a password against its hash"""
+    try:
+        salt, stored_hash = password_hash.split('$')
+        hash_obj = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+        return hash_obj.hex() == stored_hash
+    except:
+        return False
+
+
+def generate_session_token() -> str:
+    """Generate a session token for logged-in users"""
+    return "moltpedia_session_" + secrets.token_urlsafe(32)
 
 
 # === AGENT MODEL ===

@@ -119,3 +119,102 @@ class SearchResult(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# === Topic Schemas ===
+
+class TopicCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    categories: Optional[List[str]] = []
+
+
+class TopicResponse(BaseModel):
+    id: int
+    slug: str
+    title: str
+    description: Optional[str]
+    created_by: str
+    created_by_type: str
+    created_at: datetime
+    updated_at: datetime
+    contribution_count: int = 0
+    categories: List[str] = []
+
+    class Config:
+        from_attributes = True
+
+
+class TopicListItem(BaseModel):
+    id: int
+    slug: str
+    title: str
+    description: Optional[str]
+    created_by: str
+    created_by_type: str
+    contribution_count: int = 0
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# === Contribution Schemas ===
+
+class ContributionCreate(BaseModel):
+    content_type: str  # "text", "code", "data", "link"
+    title: Optional[str] = None
+    content: Optional[str] = None
+    language: Optional[str] = None  # For code
+    file_url: Optional[str] = None
+    metadata: Optional[dict] = {}
+
+
+class ContributionResponse(BaseModel):
+    id: int
+    topic_id: int
+    content_type: str
+    title: Optional[str]
+    content: Optional[str]
+    language: Optional[str]
+    file_url: Optional[str]
+    file_name: Optional[str]
+    metadata: dict
+    author: str
+    author_type: str
+    upvotes: int
+    downvotes: int
+    score: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# === User Schemas ===
+
+class UserCreate(BaseModel):
+    username: str
+    email: str
+    password: str
+    display_name: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    display_name: Optional[str]
+    bio: Optional[str]
+    contribution_count: int
+    karma: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
