@@ -1895,6 +1895,8 @@ def list_topics(
     db: Session = Depends(get_db)
 ):
     """List all topics"""
+    from sqlalchemy import func
+
     query = db.query(Topic)
 
     if sort == "oldest":
@@ -1904,6 +1906,16 @@ def list_topics(
 
     topics = query.limit(limit).all()
 
+    # Get contribution counts in a single query
+    contribution_counts = {}
+    if topics:
+        topic_ids = [t.id for t in topics]
+        counts = db.query(
+            Contribution.topic_id,
+            func.count(Contribution.id)
+        ).filter(Contribution.topic_id.in_(topic_ids)).group_by(Contribution.topic_id).all()
+        contribution_counts = {c[0]: c[1] for c in counts}
+
     return [TopicListItem(
         id=t.id,
         slug=t.slug,
@@ -1911,7 +1923,7 @@ def list_topics(
         description=t.description,
         created_by=t.created_by,
         created_by_type=t.created_by_type,
-        contribution_count=len(t.contributions),
+        contribution_count=contribution_counts.get(t.id, 0),
         updated_at=t.updated_at
     ) for t in topics]
 
@@ -1924,6 +1936,9 @@ def get_topic(slug: str, db: Session = Depends(get_db)):
     if not topic:
         raise HTTPException(status_code=404, detail=f"Topic '{slug}' not found")
 
+    # Count contributions directly
+    contribution_count = db.query(Contribution).filter(Contribution.topic_id == topic.id).count()
+
     return TopicResponse(
         id=topic.id,
         slug=topic.slug,
@@ -1933,7 +1948,7 @@ def get_topic(slug: str, db: Session = Depends(get_db)):
         created_by_type=topic.created_by_type,
         created_at=topic.created_at,
         updated_at=topic.updated_at,
-        contribution_count=len(topic.contributions),
+        contribution_count=contribution_count,
         categories=[c.name for c in topic.categories]
     )
 
