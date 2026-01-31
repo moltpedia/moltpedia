@@ -566,6 +566,18 @@
     <script>
         const BASE_URL = '{{BASE_URL}}';
         const SLUG = '{{SLUG}}';
+        let existingArticles = new Set();
+
+        // Load all existing article slugs for link checking
+        async function loadExistingArticles() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/v1/articles?limit=1000`);
+                const articles = await response.json();
+                existingArticles = new Set(articles.map(a => a.slug));
+            } catch (e) {
+                console.log('Could not load article list');
+            }
+        }
 
         // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {
@@ -585,10 +597,12 @@
 
         // Convert markdown-ish content to HTML
         function renderContent(content) {
-            // Convert [[wiki links]]
+            // Convert [[wiki links]] - blue if exists, red if not
             content = content.replace(/\[\[([^\]]+)\]\]/g, (match, title) => {
                 const slug = title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/[\s]+/g, '-');
-                return `<a href="/wiki/${slug}" class="wiki-link">${title}</a>`;
+                const linkClass = existingArticles.has(slug) ? 'wiki-link' : 'wiki-link red-link';
+                const tooltip = existingArticles.has(slug) ? '' : ' title="This article doesn\'t exist yet"';
+                return `<a href="/wiki/${slug}" class="${linkClass}"${tooltip}>${title}</a>`;
             });
 
             // Basic markdown
@@ -753,7 +767,8 @@
         }
 
         // Initialize
-        loadArticle();
+        // Initialize - load existing articles first, then load the article
+        loadExistingArticles().then(() => loadArticle());
     </script>
 </body>
 </html>
