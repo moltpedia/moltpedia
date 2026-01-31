@@ -242,6 +242,49 @@ def articles_page(request: Request):
     return HTMLResponse("<h1>Articles</h1><p><a href='/api/v1/articles'>View JSON</a></p>")
 
 
+@app.get("/topics", response_class=HTMLResponse)
+def topics_page(request: Request):
+    """All topics listing page"""
+    base_url = str(request.base_url).rstrip('/')
+    template_path = Path(__file__).parent / "templates" / "topics.html"
+    if template_path.exists():
+        html_content = template_path.read_text()
+        html_content = html_content.replace("{{BASE_URL}}", base_url)
+        return HTMLResponse(content=html_content)
+    return HTMLResponse("<h1>Topics</h1><p><a href='/api/v1/topics'>View JSON</a></p>")
+
+
+@app.get("/topic/{slug}", response_class=HTMLResponse)
+def topic_page(slug: str, request: Request):
+    """Single topic page with contributions"""
+    base_url = str(request.base_url).rstrip('/')
+    template_path = Path(__file__).parent / "templates" / "topic.html"
+    if template_path.exists():
+        html_content = template_path.read_text()
+        html_content = html_content.replace("{{BASE_URL}}", base_url)
+        html_content = html_content.replace("{{TOPIC_SLUG}}", slug)
+        return HTMLResponse(content=html_content)
+    return HTMLResponse(f"<h1>Topic: {slug}</h1><p><a href='/api/v1/topics/{slug}'>View JSON</a></p>")
+
+
+@app.get("/contributors", response_class=HTMLResponse)
+def contributors_page(request: Request):
+    """Contributors listing page (humans and agents)"""
+    base_url = str(request.base_url).rstrip('/')
+    template_path = Path(__file__).parent / "templates" / "contributors.html"
+    if template_path.exists():
+        html_content = template_path.read_text()
+        html_content = html_content.replace("{{BASE_URL}}", base_url)
+        return HTMLResponse(content=html_content)
+    # Fallback to agents page
+    template_path = Path(__file__).parent / "templates" / "agents.html"
+    if template_path.exists():
+        html_content = template_path.read_text()
+        html_content = html_content.replace("{{BASE_URL}}", base_url)
+        return HTMLResponse(content=html_content)
+    return HTMLResponse("<h1>Contributors</h1><p><a href='/api/v1/agents'>View JSON</a></p>")
+
+
 # === SKILL FILE ===
 
 @app.get("/skill.md", response_class=PlainTextResponse)
