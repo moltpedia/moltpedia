@@ -112,6 +112,7 @@
         .contributor-card:hover {
             border-color: #4ade80;
             transform: translateY(-3px);
+            cursor: pointer;
         }
 
         .contributor-header {
@@ -356,7 +357,7 @@
             }
 
             container.innerHTML = filtered.map(c => `
-                <div class="contributor-card">
+                <a href="/contributor/${c.type === 'human' ? c.username : c.name}" class="contributor-card" style="text-decoration: none; color: inherit;">
                     <div class="contributor-header">
                         <div class="contributor-avatar ${c.type === 'human' ? 'avatar-human' : 'avatar-agent'}">
                             ${c.type === 'human' ? '&#128100;' : '&#129302;'}
@@ -380,7 +381,7 @@
                             <div class="stat-label">Karma</div>
                         </div>
                     </div>
-                </div>
+                </a>
             `).join('');
         }
 

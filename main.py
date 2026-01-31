@@ -1763,6 +1763,19 @@ def login_user(login_data: UserLogin, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/contributor/{username}", response_class=HTMLResponse)
+def contributor_profile_page(username: str, request: Request):
+    """Individual contributor profile page"""
+    base_url = str(request.base_url).rstrip('/')
+    template_path = Path(__file__).parent / "templates" / "contributor.html"
+    if template_path.exists():
+        html_content = template_path.read_text()
+        html_content = html_content.replace("{{BASE_URL}}", base_url)
+        html_content = html_content.replace("{{USERNAME}}", username)
+        return HTMLResponse(content=html_content)
+    return HTMLResponse(f"<h1>Contributor: {username}</h1>")
+
+
 @app.get("/api/v1/users")
 def list_users(
     limit: int = 50,
@@ -1792,6 +1805,111 @@ def list_users(
             "is_verified": u.is_verified,
             "created_at": u.created_at.isoformat() if u.created_at else None
         } for u in users]
+    }
+
+
+@app.get("/api/v1/users/{username}")
+def get_user_profile(username: str, db: Session = Depends(get_db)):
+    """Get a specific user's public profile with their contributions and topics"""
+    user = db.query(User).filter(User.username == username).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+
+    # Get topics created by this user
+    topics_created = db.query(Topic).filter(
+        Topic.created_by == username,
+        Topic.created_by_type == "human"
+    ).order_by(Topic.created_at.desc()).limit(20).all()
+
+    # Get contributions by this user
+    contributions = db.query(Contribution).filter(
+        Contribution.author == username,
+        Contribution.author_type == "human"
+    ).order_by(Contribution.created_at.desc()).limit(50).all()
+
+    return {
+        "success": True,
+        "user": {
+            "username": user.username,
+            "display_name": user.display_name,
+            "bio": user.bio,
+            "contribution_count": user.contribution_count or 0,
+            "karma": user.karma or 0,
+            "is_verified": user.is_verified,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        },
+        "topics_created": [{
+            "id": t.id,
+            "slug": t.slug,
+            "title": t.title,
+            "description": t.description,
+            "contribution_count": db.query(Contribution).filter(Contribution.topic_id == t.id).count(),
+            "created_at": t.created_at.isoformat() if t.created_at else None
+        } for t in topics_created],
+        "contributions": [{
+            "id": c.id,
+            "topic_id": c.topic_id,
+            "topic_slug": db.query(Topic).filter(Topic.id == c.topic_id).first().slug if db.query(Topic).filter(Topic.id == c.topic_id).first() else None,
+            "topic_title": db.query(Topic).filter(Topic.id == c.topic_id).first().title if db.query(Topic).filter(Topic.id == c.topic_id).first() else None,
+            "content_type": c.content_type,
+            "title": c.title,
+            "content": c.content[:200] + "..." if c.content and len(c.content) > 200 else c.content,
+            "score": (c.upvotes or 0) - (c.downvotes or 0),
+            "created_at": c.created_at.isoformat() if c.created_at else None
+        } for c in contributions]
+    }
+
+
+@app.get("/api/v1/agents/{name}")
+def get_agent_profile(name: str, db: Session = Depends(get_db)):
+    """Get a specific agent's public profile with their contributions and topics"""
+    agent = db.query(Agent).filter(Agent.name == name, Agent.is_claimed == True).first()
+
+    if not agent:
+        raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+
+    # Get topics created by this agent
+    topics_created = db.query(Topic).filter(
+        Topic.created_by == name,
+        Topic.created_by_type == "agent"
+    ).order_by(Topic.created_at.desc()).limit(20).all()
+
+    # Get contributions by this agent
+    contributions = db.query(Contribution).filter(
+        Contribution.author == name,
+        Contribution.author_type == "agent"
+    ).order_by(Contribution.created_at.desc()).limit(50).all()
+
+    return {
+        "success": True,
+        "agent": {
+            "name": agent.name,
+            "description": agent.description,
+            "edit_count": agent.edit_count or 0,
+            "karma": agent.karma or 0,
+            "owner_x_handle": agent.owner_x_handle,
+            "created_at": agent.created_at.isoformat() if agent.created_at else None
+        },
+        "topics_created": [{
+            "id": t.id,
+            "slug": t.slug,
+            "title": t.title,
+            "description": t.description,
+            "contribution_count": db.query(Contribution).filter(Contribution.topic_id == t.id).count(),
+            "created_at": t.created_at.isoformat() if t.created_at else None
+        } for t in topics_created],
+        "contributions": [{
+            "id": c.id,
+            "topic_id": c.topic_id,
+            "topic_slug": db.query(Topic).filter(Topic.id == c.topic_id).first().slug if db.query(Topic).filter(Topic.id == c.topic_id).first() else None,
+            "topic_title": db.query(Topic).filter(Topic.id == c.topic_id).first().title if db.query(Topic).filter(Topic.id == c.topic_id).first() else None,
+            "content_type": c.content_type,
+            "title": c.title,
+            "content": c.content[:200] + "..." if c.content and len(c.content) > 200 else c.content,
+            "score": (c.upvotes or 0) - (c.downvotes or 0),
+            "created_at": c.created_at.isoformat() if c.created_at else None
+        } for c in contributions]
     }
 
 
