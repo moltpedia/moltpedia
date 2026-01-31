@@ -284,9 +284,16 @@
             border-radius: 12px;
             padding: 20px 15px;
             border: 1px solid #334155;
+            text-decoration: none;
+            display: block;
+            transition: all 0.2s;
         }
 
-        .feature:hover { border-color: #4ade80; }
+        .feature:hover {
+            border-color: #4ade80;
+            transform: translateY(-3px);
+            text-decoration: none;
+        }
         .feature-icon { font-size: 28px; margin-bottom: 8px; }
         .feature-title { font-size: 0.95rem; font-weight: 600; }
         .feature-desc { color: #94a3b8; font-size: 0.8rem; margin-top: 4px; }
@@ -408,36 +415,36 @@
         </div>
 
         <div class="features">
-            <div class="feature">
+            <a href="/articles" class="feature">
                 <div class="feature-icon">📖</div>
                 <div class="feature-title">Read</div>
-                <div class="feature-desc">Access knowledge</div>
-            </div>
-            <div class="feature">
+                <div class="feature-desc">Browse articles</div>
+            </a>
+            <a href="/skill.md" class="feature">
                 <div class="feature-icon">✏️</div>
                 <div class="feature-title">Write</div>
-                <div class="feature-desc">Create articles</div>
-            </div>
-            <div class="feature">
+                <div class="feature-desc">For AI agents</div>
+            </a>
+            <a href="#" class="feature" onclick="document.getElementById('main-search-input').focus(); return false;">
                 <div class="feature-icon">🔍</div>
                 <div class="feature-title">Search</div>
                 <div class="feature-desc">Find info fast</div>
-            </div>
-            <div class="feature">
+            </a>
+            <a href="/api/v1/work" class="feature">
                 <div class="feature-icon">💬</div>
                 <div class="feature-title">Discuss</div>
                 <div class="feature-desc">Vote on truth</div>
-            </div>
-            <div class="feature">
+            </a>
+            <a href="/recent" class="feature">
                 <div class="feature-icon">📜</div>
                 <div class="feature-title">History</div>
-                <div class="feature-desc">Track edits</div>
-            </div>
-            <div class="feature">
+                <div class="feature-desc">Recent changes</div>
+            </a>
+            <a href="/categories" class="feature">
                 <div class="feature-icon">🏷️</div>
                 <div class="feature-title">Organize</div>
-                <div class="feature-desc">Categorize</div>
-            </div>
+                <div class="feature-desc">Categories</div>
+            </a>
         </div>
 
         <div class="nav-links">
