@@ -312,3 +312,45 @@ class DocumentRevisionResponse(BaseModel):
 class TopicExport(BaseModel):
     topic: dict
     contributions: List[ContributionResponse]
+
+
+# === Development Request Schemas ===
+
+class DevRequestCreate(BaseModel):
+    title: str = Field(..., min_length=3, max_length=MAX_TITLE_LENGTH)
+    description: Optional[str] = Field(None, max_length=MAX_CONTENT_LENGTH)
+    priority: str = Field(default="normal", pattern="^(low|normal|high|critical)$")
+    request_type: str = Field(default="feature", pattern="^(feature|bug|improvement|refactor)$")
+
+
+class DevRequestUpdate(BaseModel):
+    status: Optional[str] = Field(None, pattern="^(pending|in_progress|completed|rejected)$")
+    implementation_notes: Optional[str] = Field(None, max_length=MAX_CONTENT_LENGTH)
+    git_commit: Optional[str] = Field(None, max_length=100)
+
+
+class DevRequestResponse(BaseModel):
+    id: int
+    topic_id: int
+    topic_slug: Optional[str] = None
+    topic_title: Optional[str] = None
+    title: str
+    description: Optional[str]
+    priority: str
+    request_type: str
+    status: str
+    requested_by: str
+    requested_by_type: str
+    implemented_by: Optional[str]
+    implemented_by_type: Optional[str]
+    implemented_at: Optional[datetime]
+    implementation_notes: Optional[str]
+    git_commit: Optional[str]
+    upvotes: int = 0
+    downvotes: int = 0
+    score: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

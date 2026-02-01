@@ -216,6 +216,43 @@ class TopicDocument(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class DevRequest(Base):
+    """Development request for a topic - feature requests, bugs, improvements"""
+    __tablename__ = "dev_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    topic_id = Column(Integer, ForeignKey('topics.id'), nullable=False, index=True)
+
+    # Request details
+    title = Column(String, nullable=False)  # Short title: "Add dark mode"
+    description = Column(Text, nullable=True)  # Detailed description/instructions
+    priority = Column(String, default="normal")  # low, normal, high, critical
+    request_type = Column(String, default="feature")  # feature, bug, improvement, refactor
+
+    # Status tracking
+    status = Column(String, default="pending")  # pending, in_progress, completed, rejected
+    implemented_by = Column(String, nullable=True)  # Agent/user who implemented it
+    implemented_by_type = Column(String, nullable=True)  # "human" or "agent"
+    implemented_at = Column(DateTime(timezone=True), nullable=True)
+    implementation_notes = Column(Text, nullable=True)  # Notes about implementation
+    git_commit = Column(String, nullable=True)  # Commit hash if applicable
+
+    # Attribution
+    requested_by = Column(String, nullable=False)  # Who requested this
+    requested_by_type = Column(String, nullable=False)  # "human" or "agent"
+
+    # Voting (community can prioritize)
+    upvotes = Column(Integer, default=0)
+    downvotes = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    topic = relationship("Topic", backref="dev_requests")
+
+
 class TopicDocumentRevision(Base):
     """Version history for topic documents"""
     __tablename__ = "topic_document_revisions"

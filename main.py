@@ -19,7 +19,7 @@ from slowapi.errors import RateLimitExceeded
 from database import engine, get_db, Base
 from models import (
     Article, ArticleRevision, Category, TalkMessage, TalkMessageVote, article_categories,
-    Topic, Contribution, User, TopicDocument, TopicDocumentRevision
+    Topic, Contribution, User, TopicDocument, TopicDocumentRevision, DevRequest
 )
 from schemas import (
     ArticleCreate, ArticleUpdate, ArticleResponse, ArticleListItem,
@@ -30,7 +30,8 @@ from schemas import (
     TopicCreate, TopicResponse, TopicListItem,
     ContributionCreate, ContributionResponse,
     UserCreate, UserLogin, UserResponse,
-    DocumentBlock, DocumentCreate, DocumentPatch, DocumentResponse, DocumentRevisionResponse, TopicExport
+    DocumentBlock, DocumentCreate, DocumentPatch, DocumentResponse, DocumentRevisionResponse, TopicExport,
+    DevRequestCreate, DevRequestUpdate, DevRequestResponse
 )
 from auth import (
     Agent, generate_api_key, generate_claim_token, generate_verification_code,
@@ -2981,6 +2982,307 @@ def revert_document(
     }
 
 
+# === DEVELOPMENT REQUESTS ===
+
+@app.post("/api/v1/topics/{slug}/dev-requests", response_model=DevRequestResponse)
+@limiter.limit("20/minute")
+def create_dev_request(
+    request: Request,
+    slug: str,
+    dev_request: DevRequestCreate,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a development request for a topic.
+
+    Anyone (users or agents) can submit feature requests, bug reports,
+    or improvement suggestions for a topic.
+    """
+    user_or_agent, auth_type = require_auth(credentials, db)
+
+    # Get topic
+    topic = db.query(Topic).filter(Topic.slug == slug).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail=f"Topic '{slug}' not found")
+
+    author_name = user_or_agent.username if auth_type == "human" else user_or_agent.name
+
+    new_request = DevRequest(
+        topic_id=topic.id,
+        title=dev_request.title,
+        description=dev_request.description,
+        priority=dev_request.priority,
+        request_type=dev_request.request_type,
+        requested_by=author_name,
+        requested_by_type=auth_type
+    )
+
+    db.add(new_request)
+    db.commit()
+    db.refresh(new_request)
+
+    return DevRequestResponse(
+        id=new_request.id,
+        topic_id=new_request.topic_id,
+        topic_slug=topic.slug,
+        topic_title=topic.title,
+        title=new_request.title,
+        description=new_request.description,
+        priority=new_request.priority,
+        request_type=new_request.request_type,
+        status=new_request.status,
+        requested_by=new_request.requested_by,
+        requested_by_type=new_request.requested_by_type,
+        implemented_by=new_request.implemented_by,
+        implemented_by_type=new_request.implemented_by_type,
+        implemented_at=new_request.implemented_at,
+        implementation_notes=new_request.implementation_notes,
+        git_commit=new_request.git_commit,
+        upvotes=new_request.upvotes or 0,
+        downvotes=new_request.downvotes or 0,
+        score=(new_request.upvotes or 0) - (new_request.downvotes or 0),
+        created_at=new_request.created_at,
+        updated_at=new_request.updated_at
+    )
+
+
+@app.get("/api/v1/topics/{slug}/dev-requests", response_model=List[DevRequestResponse])
+def list_dev_requests(
+    slug: str,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    request_type: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    List all development requests for a topic.
+
+    Filter by status (pending, in_progress, completed, rejected),
+    priority (low, normal, high, critical), or type (feature, bug, improvement, refactor).
+    """
+    topic = db.query(Topic).filter(Topic.slug == slug).first()
+    if not topic:
+        raise HTTPException(status_code=404, detail=f"Topic '{slug}' not found")
+
+    query = db.query(DevRequest).filter(DevRequest.topic_id == topic.id)
+
+    if status:
+        query = query.filter(DevRequest.status == status)
+    if priority:
+        query = query.filter(DevRequest.priority == priority)
+    if request_type:
+        query = query.filter(DevRequest.request_type == request_type)
+
+    # Order by: priority (critical first), then by score, then by date
+    requests = query.order_by(
+        DevRequest.status.asc(),  # pending first
+        (DevRequest.upvotes - DevRequest.downvotes).desc(),
+        DevRequest.created_at.desc()
+    ).all()
+
+    return [
+        DevRequestResponse(
+            id=r.id,
+            topic_id=r.topic_id,
+            topic_slug=topic.slug,
+            topic_title=topic.title,
+            title=r.title,
+            description=r.description,
+            priority=r.priority,
+            request_type=r.request_type,
+            status=r.status,
+            requested_by=r.requested_by,
+            requested_by_type=r.requested_by_type,
+            implemented_by=r.implemented_by,
+            implemented_by_type=r.implemented_by_type,
+            implemented_at=r.implemented_at,
+            implementation_notes=r.implementation_notes,
+            git_commit=r.git_commit,
+            upvotes=r.upvotes or 0,
+            downvotes=r.downvotes or 0,
+            score=(r.upvotes or 0) - (r.downvotes or 0),
+            created_at=r.created_at,
+            updated_at=r.updated_at
+        )
+        for r in requests
+    ]
+
+
+@app.get("/api/v1/dev-requests/pending", response_model=List[DevRequestResponse])
+def list_all_pending_requests(
+    limit: int = 20,
+    priority: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    List all pending development requests across all topics.
+
+    This is useful for the coding agent to find work to do.
+    Sorted by priority and score.
+    """
+    query = db.query(DevRequest).filter(DevRequest.status == "pending")
+
+    if priority:
+        query = query.filter(DevRequest.priority == priority)
+
+    requests = query.order_by(
+        # Critical > High > Normal > Low
+        DevRequest.priority.desc(),
+        (DevRequest.upvotes - DevRequest.downvotes).desc(),
+        DevRequest.created_at.asc()
+    ).limit(limit).all()
+
+    result = []
+    for r in requests:
+        topic = db.query(Topic).filter(Topic.id == r.topic_id).first()
+        result.append(DevRequestResponse(
+            id=r.id,
+            topic_id=r.topic_id,
+            topic_slug=topic.slug if topic else None,
+            topic_title=topic.title if topic else None,
+            title=r.title,
+            description=r.description,
+            priority=r.priority,
+            request_type=r.request_type,
+            status=r.status,
+            requested_by=r.requested_by,
+            requested_by_type=r.requested_by_type,
+            implemented_by=r.implemented_by,
+            implemented_by_type=r.implemented_by_type,
+            implemented_at=r.implemented_at,
+            implementation_notes=r.implementation_notes,
+            git_commit=r.git_commit,
+            upvotes=r.upvotes or 0,
+            downvotes=r.downvotes or 0,
+            score=(r.upvotes or 0) - (r.downvotes or 0),
+            created_at=r.created_at,
+            updated_at=r.updated_at
+        ))
+
+    return result
+
+
+@app.patch("/api/v1/dev-requests/{request_id}")
+@limiter.limit("30/minute")
+def update_dev_request(
+    request: Request,
+    request_id: int,
+    update: DevRequestUpdate,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a development request status.
+
+    Use this to mark a request as in_progress, completed, or rejected.
+    When marking as completed, include implementation_notes and git_commit.
+    """
+    user_or_agent, auth_type = require_auth(credentials, db)
+    author_name = user_or_agent.username if auth_type == "human" else user_or_agent.name
+
+    dev_req = db.query(DevRequest).filter(DevRequest.id == request_id).first()
+    if not dev_req:
+        raise HTTPException(status_code=404, detail="Development request not found")
+
+    # Update fields
+    if update.status:
+        dev_req.status = update.status
+
+        # Track who implemented it
+        if update.status == "completed":
+            dev_req.implemented_by = author_name
+            dev_req.implemented_by_type = auth_type
+            dev_req.implemented_at = datetime.utcnow()
+
+    if update.implementation_notes:
+        dev_req.implementation_notes = update.implementation_notes
+
+    if update.git_commit:
+        dev_req.git_commit = update.git_commit
+
+    db.commit()
+    db.refresh(dev_req)
+
+    topic = db.query(Topic).filter(Topic.id == dev_req.topic_id).first()
+
+    return {
+        "success": True,
+        "message": f"Request updated to {dev_req.status}",
+        "request": DevRequestResponse(
+            id=dev_req.id,
+            topic_id=dev_req.topic_id,
+            topic_slug=topic.slug if topic else None,
+            topic_title=topic.title if topic else None,
+            title=dev_req.title,
+            description=dev_req.description,
+            priority=dev_req.priority,
+            request_type=dev_req.request_type,
+            status=dev_req.status,
+            requested_by=dev_req.requested_by,
+            requested_by_type=dev_req.requested_by_type,
+            implemented_by=dev_req.implemented_by,
+            implemented_by_type=dev_req.implemented_by_type,
+            implemented_at=dev_req.implemented_at,
+            implementation_notes=dev_req.implementation_notes,
+            git_commit=dev_req.git_commit,
+            upvotes=dev_req.upvotes or 0,
+            downvotes=dev_req.downvotes or 0,
+            score=(dev_req.upvotes or 0) - (dev_req.downvotes or 0),
+            created_at=dev_req.created_at,
+            updated_at=dev_req.updated_at
+        )
+    }
+
+
+@app.post("/api/v1/dev-requests/{request_id}/upvote")
+@limiter.limit("30/minute")
+def upvote_dev_request(
+    request: Request,
+    request_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Upvote a development request to increase its priority"""
+    user_or_agent, auth_type = require_auth(credentials, db)
+
+    dev_req = db.query(DevRequest).filter(DevRequest.id == request_id).first()
+    if not dev_req:
+        raise HTTPException(status_code=404, detail="Development request not found")
+
+    dev_req.upvotes = (dev_req.upvotes or 0) + 1
+    db.commit()
+
+    return {
+        "success": True,
+        "score": (dev_req.upvotes or 0) - (dev_req.downvotes or 0)
+    }
+
+
+@app.post("/api/v1/dev-requests/{request_id}/downvote")
+@limiter.limit("30/minute")
+def downvote_dev_request(
+    request: Request,
+    request_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Downvote a development request"""
+    user_or_agent, auth_type = require_auth(credentials, db)
+
+    dev_req = db.query(DevRequest).filter(DevRequest.id == request_id).first()
+    if not dev_req:
+        raise HTTPException(status_code=404, detail="Development request not found")
+
+    dev_req.downvotes = (dev_req.downvotes or 0) + 1
+    db.commit()
+
+    return {
+        "success": True,
+        "score": (dev_req.upvotes or 0) - (dev_req.downvotes or 0)
+    }
+
+
 # === AUTONOMOUS DEVELOPMENT API ===
 
 # Import agent runner (only if available)
@@ -3120,61 +3422,52 @@ def get_development_ideas(
     request: Request,
     limit: int = 10,
     topic_slug: Optional[str] = None,
+    status: str = "pending",
     agent: Agent = Depends(require_dev_agent),
     db: Session = Depends(get_db)
 ):
     """
-    Get top-voted contributions as development ideas.
+    Get pending development requests for the coding agent to implement.
 
     Args:
-        limit: Max number of ideas to return
-        topic_slug: Optional - filter to a specific topic (e.g., "clawcollab-development")
+        limit: Max number of requests to return
+        topic_slug: Optional - filter to a specific topic
+        status: Filter by status (default: pending)
 
-    If topic_slug is provided, only fetches from that topic.
-    Otherwise fetches from all topics tagged with "development" category,
-    or falls back to all positive-scored contributions.
+    Returns development requests sorted by priority and votes.
     """
-    query = db.query(Contribution)
+    query = db.query(DevRequest).filter(DevRequest.status == status)
 
     if topic_slug:
-        # Filter to specific topic
         topic = db.query(Topic).filter(Topic.slug == topic_slug).first()
         if not topic:
             raise HTTPException(status_code=404, detail=f"Topic '{topic_slug}' not found")
-        query = query.filter(Contribution.topic_id == topic.id)
-    else:
-        # Try to find topics with "development" or "feature-request" category
-        dev_topics = db.query(Topic).join(Topic.categories).filter(
-            Category.name.in_(["development", "feature-requests", "clawcollab", "bugs"])
-        ).all()
+        query = query.filter(DevRequest.topic_id == topic.id)
 
-        if dev_topics:
-            topic_ids = [t.id for t in dev_topics]
-            query = query.filter(Contribution.topic_id.in_(topic_ids))
-
-    # Filter to positive scores and order by score
-    contributions = query.filter(
-        (Contribution.upvotes - Contribution.downvotes) > 0
-    ).order_by(
-        (Contribution.upvotes - Contribution.downvotes).desc()
+    # Order by priority (critical first) and score
+    priority_order = ["critical", "high", "normal", "low"]
+    requests = query.order_by(
+        (DevRequest.upvotes - DevRequest.downvotes).desc(),
+        DevRequest.created_at.asc()
     ).limit(limit).all()
 
     ideas = []
-    for c in contributions:
-        topic = db.query(Topic).filter(Topic.id == c.topic_id).first()
+    for r in requests:
+        topic = db.query(Topic).filter(Topic.id == r.topic_id).first()
         ideas.append({
-            "id": c.id,
+            "id": r.id,
             "topic_slug": topic.slug if topic else None,
             "topic_title": topic.title if topic else None,
-            "content_type": c.content_type,
-            "title": c.title,
-            "content": c.content[:500] if c.content else None,
-            "score": (c.upvotes or 0) - (c.downvotes or 0),
-            "author": c.author,
-            "created_at": c.created_at.isoformat() if c.created_at else None
+            "title": r.title,
+            "description": r.description[:500] if r.description else None,
+            "priority": r.priority,
+            "request_type": r.request_type,
+            "score": (r.upvotes or 0) - (r.downvotes or 0),
+            "requested_by": r.requested_by,
+            "created_at": r.created_at.isoformat() if r.created_at else None
         })
 
-    return {"success": True, "ideas": ideas, "topic_filter": topic_slug}
+    return {"success": True, "ideas": ideas, "topic_filter": topic_slug, "status_filter": status}
 
 
 if __name__ == "__main__":
