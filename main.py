@@ -86,7 +86,7 @@ def get_current_agent(
     agent = db.query(Agent).filter(Agent.api_key == api_key).first()
 
     if agent:
-        agent.last_active = datetime.utcnow()
+        agent.last_active = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
 
     return agent
@@ -113,7 +113,7 @@ def require_agent(
             detail="Invalid API key. Register at POST /api/v1/agents/register"
         )
 
-    agent.last_active = datetime.utcnow()
+    agent.last_active = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
 
     return agent
@@ -844,7 +844,7 @@ def claim_agent_form(
     # Mark agent as claimed
     agent.is_claimed = True
     agent.owner_x_handle = x_handle
-    agent.claimed_at = datetime.utcnow()
+    agent.claimed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     agent.claim_token = None
     db.commit()
 
@@ -891,7 +891,7 @@ def claim_agent_json(
     # Mark agent as claimed
     agent.is_claimed = True
     agent.owner_x_handle = x_handle
-    agent.claimed_at = datetime.utcnow()
+    agent.claimed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     agent.claim_token = None
     db.commit()
 
@@ -958,7 +958,7 @@ def quick_claim(
     # Mark as claimed
     agent.is_claimed = True
     agent.owner_x_handle = "api_claimed"
-    agent.claimed_at = datetime.utcnow()
+    agent.claimed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     agent.claim_token = None
     db.commit()
 
@@ -1166,39 +1166,54 @@ def get_current_user_or_agent(
             UserSession.is_active == True
         ).first()
         if session:
-            # Check session expiry (30 days)
             now_utc = datetime.now(timezone.utc)
-            # Make expires_at timezone-aware if it isn't
-            expires_at = session.expires_at
-            if expires_at and expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if expires_at and now_utc > expires_at:
-                # Session expired, deactivate it
-                session.is_active = False
-                db.commit()
-                return None, None
+            
+            # Check if session has an explicit expiry
+            if session.expires_at:
+                # Make expires_at timezone-aware if it isn't
+                expires_at = session.expires_at
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                
+                # Check if session is expired
+                if now_utc > expires_at:
+                    session.is_active = False
+                    db.commit()
+                    return None, None
+            else:
+                # Fallback: check created_at + SESSION_EXPIRY_DAYS
+                created_at = session.created_at
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+                
+                session_age = now_utc - created_at
+                if session_age > timedelta(days=SESSION_EXPIRY_DAYS):
+                    session.is_active = False
+                    db.commit()
+                    return None, None
 
-            # Check created_at + 30 days if no explicit expires_at
-            # Make created_at timezone-aware if it isn't
-            created_at = session.created_at
-            if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
-            session_age = now_utc - created_at
-            if session_age > timedelta(days=SESSION_EXPIRY_DAYS):
-                session.is_active = False
-                db.commit()
-                return None, None
-
+            # Update user last activity
             user = db.query(User).filter(User.id == session.user_id).first()
             if user:
-                user.last_active = datetime.utcnow()
+                user.last_active = now_utc.replace(tzinfo=None)  # Store as naive
+                
+                # Auto-extend session if it's within 7 days of expiry
+                if session.expires_at:
+                    expires_at = session.expires_at
+                    if expires_at.tzinfo is None:
+                        expires_at = expires_at.replace(tzinfo=timezone.utc)
+                    
+                    days_until_expiry = (expires_at - now_utc).days
+                    if days_until_expiry <= 7:  # Extend if within 7 days
+                        session.expires_at = now_utc + timedelta(days=SESSION_EXPIRY_DAYS)
+                        db.commit()
                 db.commit()
                 return user, "human"
 
     # Check if it's an agent API key
     agent = db.query(Agent).filter(Agent.api_key == token).first()
     if agent:
-        agent.last_active = datetime.utcnow()
+        agent.last_active = datetime.now(timezone.utc).replace(tzinfo=None)
         db.commit()
         return agent, "agent"
 
@@ -1288,16 +1303,17 @@ def login_user(request: Request, login_data: UserLogin, db: Session = Depends(ge
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is disabled")
 
-    # Generate session token and store in database with expiry
+    # Generate session token and store in database with expiry (timezone-aware)
     token = generate_session_token()
+    now_utc = datetime.now(timezone.utc)
     session = UserSession(
         user_id=user.id,
         token=token,
-        expires_at=datetime.utcnow() + timedelta(days=SESSION_EXPIRY_DAYS)
+        expires_at=now_utc + timedelta(days=SESSION_EXPIRY_DAYS)
     )
     db.add(session)
 
-    user.last_active = datetime.utcnow()
+    user.last_active = now_utc.replace(tzinfo=None)  # Store as naive in DB
     db.commit()
 
     return {
@@ -1309,6 +1325,60 @@ def login_user(request: Request, login_data: UserLogin, db: Session = Depends(ge
             "display_name": user.display_name
         },
         "token": token
+    }
+
+
+@app.post("/api/v1/users/refresh-session")
+def refresh_session(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Refresh user session token to extend expiry"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Authorization token required")
+    
+    token = credentials.credentials
+    
+    # Only handle session tokens
+    if not token.startswith("clawcollab_session_"):
+        raise HTTPException(status_code=400, detail="Invalid session token")
+    
+    session = db.query(UserSession).filter(
+        UserSession.token == token,
+        UserSession.is_active == True
+    ).first()
+    
+    if not session:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    
+    now_utc = datetime.now(timezone.utc)
+    
+    # Check if session is still valid (not expired)
+    if session.expires_at:
+        expires_at = session.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        
+        if now_utc > expires_at:
+            session.is_active = False
+            db.commit()
+            raise HTTPException(status_code=401, detail="Session expired")
+    
+    # Extend session expiry
+    session.expires_at = now_utc + timedelta(days=SESSION_EXPIRY_DAYS)
+    
+    # Update user last activity
+    user = db.query(User).filter(User.id == session.user_id).first()
+    if user:
+        user.last_active = now_utc.replace(tzinfo=None)
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Session refreshed successfully",
+        "expires_at": session.expires_at.isoformat(),
+        "expires_in_days": SESSION_EXPIRY_DAYS
     }
 
 
@@ -2596,7 +2666,7 @@ def update_dev_request(
         if update.status == "completed":
             dev_req.implemented_by = author_name
             dev_req.implemented_by_type = auth_type
-            dev_req.implemented_at = datetime.utcnow()
+            dev_req.implemented_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     if update.implementation_notes:
         dev_req.implementation_notes = update.implementation_notes

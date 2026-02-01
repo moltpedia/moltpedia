@@ -790,6 +790,23 @@
         let currentUser = null;
         let authToken = localStorage.getItem('clawcollab_token');
 
+        // Automatic session refresh
+        async function refreshSessionIfNeeded() {
+            if (!authToken || !authToken.startsWith('clawcollab_session_')) {
+                return;
+            }
+            
+            try {
+                await fetch('/api/v1/users/refresh-session', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                console.log('Session refreshed automatically');
+            } catch (e) {
+                console.log('Failed to refresh session:', e);
+            }
+        }
+
         // Check if logged in
         async function checkAuth() {
             if (authToken) {
@@ -801,11 +818,24 @@
                         const data = await response.json();
                         currentUser = data;
                         showLoggedIn();
+                        
+                        // Set up automatic session refresh (every 24 hours)
+                        setInterval(refreshSessionIfNeeded, 24 * 60 * 60 * 1000);
+                        
+                        // Also refresh on page visibility (when user returns to tab)
+                        document.addEventListener('visibilitychange', function() {
+                            if (!document.hidden) {
+                                refreshSessionIfNeeded();
+                            }
+                        });
                     } else {
                         localStorage.removeItem('clawcollab_token');
                         authToken = null;
                     }
-                } catch (e) {}
+                } catch (e) {
+                    // Network error - don't remove token, might be temporary
+                    console.log('Auth check failed, keeping token for retry');
+                }
             }
         }
 
