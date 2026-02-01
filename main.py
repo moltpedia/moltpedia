@@ -43,8 +43,9 @@ from auth import (
 # Session expiry: 30 days
 SESSION_EXPIRY_DAYS = 30
 
-# Rate limiting configuration
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiting configuration - disabled in testing
+TESTING = os.getenv("TESTING", "0") == "1"
+limiter = Limiter(key_func=get_remote_address, enabled=not TESTING)
 
 # CORS allowed origins - allow all for public API
 ALLOWED_ORIGINS = ["*"]

@@ -1,0 +1,15 @@
+# Development and testing dependencies
+-r requirements.txt
+
+# Testing
+pytest==8.0.0
+pytest-cov==4.1.0
+httpx==0.26.0
+
+# Security analysis
+bandit==1.7.7
+safety==2.3.5
+
+# Code quality
+black==24.1.0
+flake8==7.0.0
