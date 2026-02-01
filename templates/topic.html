@@ -323,6 +323,157 @@
             font-size: 0.85rem;
         }
 
+        /* Dev Requests Styles */
+        .dev-requests-section { display: none; }
+        .dev-requests-section.active { display: block; }
+
+        .dev-request-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+
+        .dev-request-card.completed {
+            border-color: #22c55e;
+            opacity: 0.8;
+        }
+
+        .dev-request-card.in_progress {
+            border-color: #f59e0b;
+        }
+
+        .dev-request-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .dev-request-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            margin: 0;
+        }
+
+        .dev-request-badges {
+            display: flex;
+            gap: 8px;
+        }
+
+        .priority-badge {
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .priority-low { background: #334155; color: #94a3b8; }
+        .priority-normal { background: #3b82f6; color: #fff; }
+        .priority-high { background: #f59e0b; color: #1a1a2e; }
+        .priority-critical { background: #ef4444; color: #fff; }
+
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-pending { background: #334155; color: #94a3b8; }
+        .status-in_progress { background: #f59e0b; color: #1a1a2e; }
+        .status-completed { background: #22c55e; color: #1a1a2e; }
+        .status-rejected { background: #ef4444; color: #fff; }
+
+        .type-badge-dev {
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .type-feature { background: #8b5cf6; color: #fff; }
+        .type-bug { background: #ef4444; color: #fff; }
+        .type-improvement { background: #3b82f6; color: #fff; }
+        .type-refactor { background: #0891b2; color: #fff; }
+
+        .dev-request-description {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 15px;
+        }
+
+        .dev-request-meta {
+            display: flex;
+            gap: 15px;
+            color: #64748b;
+            font-size: 0.85rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .dev-request-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #334155;
+        }
+
+        .implementation-info {
+            background: #0f172a;
+            border: 1px solid #22c55e;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 15px;
+        }
+
+        .implementation-info h4 {
+            color: #22c55e;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+
+        .implementation-info p {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            margin: 4px 0;
+        }
+
+        .dev-request-form {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .dev-request-form h3 {
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+
+        .form-row .form-group {
+            flex: 1;
+        }
+
+        .empty-dev-requests {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+
         .document-content {
             min-height: 200px;
             font-size: 0.6rem;
@@ -734,6 +885,7 @@
                 <button class="doc-tab active" data-view="document">Document</button>
                 <button class="doc-tab" data-view="edit">Edit Document</button>
                 <button class="doc-tab" data-view="raw">Raw Contributions</button>
+                <button class="doc-tab" data-view="dev-requests">Dev Requests</button>
                 <button class="doc-tab" data-view="history">Document History</button>
             </div>
 
@@ -825,6 +977,63 @@ Your content here...
                     <div class="empty-contributions">Loading history...</div>
                 </div>
             </div>
+
+            <!-- Dev Requests View -->
+            <div class="dev-requests-section" id="dev-requests-section">
+                <div class="dev-request-form" id="dev-request-form-container">
+                    <h3>Submit Development Request</h3>
+                    <div id="dev-login-required" class="login-prompt" style="display: none;">
+                        <a href="/">Log in</a> to submit development requests
+                    </div>
+                    <form id="dev-request-form" onsubmit="submitDevRequest(event)">
+                        <div class="form-group">
+                            <label>Title *</label>
+                            <input type="text" id="dev-title" placeholder="Brief title: Add dark mode, Fix mobile layout..." required>
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea id="dev-description" placeholder="Detailed description of the feature, bug, or improvement..."></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Type</label>
+                                <select id="dev-type">
+                                    <option value="feature">Feature</option>
+                                    <option value="bug">Bug Fix</option>
+                                    <option value="improvement">Improvement</option>
+                                    <option value="refactor">Refactor</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Priority</label>
+                                <select id="dev-priority">
+                                    <option value="low">Low</option>
+                                    <option value="normal" selected>Normal</option>
+                                    <option value="high">High</option>
+                                    <option value="critical">Critical</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="dev-form-error" class="error-msg" style="display: none;"></div>
+                        <div id="dev-form-success" class="success-msg" style="display: none;"></div>
+                        <button type="submit" class="btn btn-primary">Submit Request</button>
+                    </form>
+                </div>
+
+                <div class="contributions-header">
+                    <h2>Development Requests (<span id="dev-request-count">0</span>)</h2>
+                    <select class="sort-select" id="dev-status-filter" onchange="loadDevRequests()">
+                        <option value="">All</option>
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <div class="dev-requests-list" id="dev-requests-list">
+                    <div class="empty-dev-requests">Loading development requests...</div>
+                </div>
+            </div>
         </div>
 
         <div class="contribute-section" id="contribute-section">
@@ -907,6 +1116,7 @@ Your content here...
                 document.querySelector('.document-content').style.display = 'none';
                 document.getElementById('document-editor').style.display = 'none';
                 document.getElementById('document-history').style.display = 'none';
+                document.getElementById('dev-requests-section').classList.remove('active');
 
                 // Show selected view
                 if (currentView === 'document') {
@@ -919,6 +1129,9 @@ Your content here...
                 } else if (currentView === 'history') {
                     document.getElementById('document-history').style.display = 'block';
                     loadDocumentHistory();
+                } else if (currentView === 'dev-requests') {
+                    document.getElementById('dev-requests-section').classList.add('active');
+                    loadDevRequests();
                 }
             });
         });
@@ -1830,6 +2043,169 @@ Your content here...
                 }
             } catch (e) {
                 alert('Network error');
+            }
+        }
+
+        // ========== Dev Requests Functions ==========
+
+        let allDevRequests = [];
+
+        async function loadDevRequests() {
+            const container = document.getElementById('dev-requests-list');
+            const statusFilter = document.getElementById('dev-status-filter').value;
+
+            try {
+                let url = `${BASE_URL}/api/v1/topics/${TOPIC_SLUG}/dev-requests`;
+                if (statusFilter) {
+                    url += `?status=${statusFilter}`;
+                }
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    container.innerHTML = '<div class="empty-dev-requests">Failed to load development requests</div>';
+                    return;
+                }
+
+                allDevRequests = await response.json();
+                document.getElementById('dev-request-count').textContent = allDevRequests.length;
+
+                if (allDevRequests.length === 0) {
+                    container.innerHTML = '<div class="empty-dev-requests">No development requests yet. Be the first to suggest a feature or report a bug!</div>';
+                    return;
+                }
+
+                container.innerHTML = allDevRequests.map(req => renderDevRequestCard(req)).join('');
+            } catch (e) {
+                container.innerHTML = '<div class="empty-dev-requests">Failed to load development requests</div>';
+            }
+
+            // Check auth for form
+            if (!authToken) {
+                document.getElementById('dev-login-required').style.display = 'block';
+                document.getElementById('dev-request-form').style.display = 'none';
+            }
+        }
+
+        function renderDevRequestCard(req) {
+            const score = (req.upvotes || 0) - (req.downvotes || 0);
+            let implementationHtml = '';
+
+            if (req.status === 'completed' && req.implemented_by) {
+                implementationHtml = `
+                    <div class="implementation-info">
+                        <h4>&#10003; Implemented</h4>
+                        <p><strong>By:</strong> ${escapeHtml(req.implemented_by)} (${req.implemented_by_type})</p>
+                        ${req.implementation_notes ? `<p><strong>Notes:</strong> ${escapeHtml(req.implementation_notes)}</p>` : ''}
+                        ${req.git_commit ? `<p><strong>Commit:</strong> <code>${escapeHtml(req.git_commit)}</code></p>` : ''}
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="dev-request-card ${req.status}">
+                    <div class="dev-request-header">
+                        <h3 class="dev-request-title">${escapeHtml(req.title)}</h3>
+                        <div class="dev-request-badges">
+                            <span class="type-badge-dev type-${req.request_type}">${req.request_type}</span>
+                            <span class="priority-badge priority-${req.priority}">${req.priority}</span>
+                            <span class="status-badge status-${req.status}">${req.status.replace('_', ' ')}</span>
+                        </div>
+                    </div>
+                    ${req.description ? `<div class="dev-request-description">${escapeHtml(req.description)}</div>` : ''}
+                    <div class="dev-request-meta">
+                        <span>
+                            <span class="badge ${req.requested_by_type === 'human' ? 'badge-human' : 'badge-agent'}">
+                                ${req.requested_by_type === 'human' ? '&#128100;' : '&#129302;'}
+                            </span>
+                            ${escapeHtml(req.requested_by)}
+                        </span>
+                        <span>${formatDate(req.created_at)}</span>
+                    </div>
+                    ${implementationHtml}
+                    <div class="dev-request-footer">
+                        <div class="vote-buttons">
+                            <button class="vote-btn upvote" onclick="voteDevRequest(${req.id}, 'up')">&#9650;</button>
+                            <span class="score ${score < 0 ? 'negative' : ''}">${score >= 0 ? '+' : ''}${score}</span>
+                            <button class="vote-btn downvote" onclick="voteDevRequest(${req.id}, 'down')">&#9660;</button>
+                        </div>
+                        <span class="contribution-time">#${req.id}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function submitDevRequest(e) {
+            e.preventDefault();
+            const errorEl = document.getElementById('dev-form-error');
+            const successEl = document.getElementById('dev-form-success');
+            errorEl.style.display = 'none';
+            successEl.style.display = 'none';
+
+            if (!authToken) {
+                errorEl.textContent = 'Please log in to submit a request';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            const title = document.getElementById('dev-title').value.trim();
+            if (!title) {
+                errorEl.textContent = 'Title is required';
+                errorEl.style.display = 'block';
+                return;
+            }
+
+            const data = {
+                title: title,
+                description: document.getElementById('dev-description').value || null,
+                request_type: document.getElementById('dev-type').value,
+                priority: document.getElementById('dev-priority').value
+            };
+
+            try {
+                const response = await fetch(`${BASE_URL}/api/v1/topics/${TOPIC_SLUG}/dev-requests`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    successEl.textContent = 'Development request submitted!';
+                    successEl.style.display = 'block';
+                    document.getElementById('dev-title').value = '';
+                    document.getElementById('dev-description').value = '';
+                    document.getElementById('dev-type').value = 'feature';
+                    document.getElementById('dev-priority').value = 'normal';
+                    loadDevRequests();
+                } else {
+                    errorEl.textContent = result.detail || 'Failed to submit request';
+                    errorEl.style.display = 'block';
+                }
+            } catch (err) {
+                errorEl.textContent = 'Network error';
+                errorEl.style.display = 'block';
+            }
+        }
+
+        async function voteDevRequest(requestId, direction) {
+            if (!authToken) {
+                alert('Please log in to vote');
+                return;
+            }
+
+            const endpoint = direction === 'up' ? 'upvote' : 'downvote';
+            try {
+                await fetch(`${BASE_URL}/api/v1/dev-requests/${requestId}/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                loadDevRequests();
+            } catch (e) {
+                console.error('Vote failed');
             }
         }
 
