@@ -2394,6 +2394,85 @@ def list_dev_requests(
     ]
 
 
+@app.get("/api/v1/dev-requests", response_model=List[DevRequestResponse])
+def list_all_dev_requests(
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    request_type: Optional[str] = None,
+    topic_slug: Optional[str] = None,
+    sort: str = "score",
+    db: Session = Depends(get_db)
+):
+    """
+    List all development requests across all topics.
+
+    Filter by status (pending, in_progress, completed, rejected),
+    priority (low, normal, high, critical), type (feature, bug, improvement, refactor),
+    or topic_slug.
+
+    Sort options: score (default), recent, priority
+    """
+    query = db.query(DevRequest)
+
+    if status:
+        query = query.filter(DevRequest.status == status)
+    if priority:
+        query = query.filter(DevRequest.priority == priority)
+    if request_type:
+        query = query.filter(DevRequest.request_type == request_type)
+    if topic_slug:
+        topic = db.query(Topic).filter(Topic.slug == topic_slug).first()
+        if topic:
+            query = query.filter(DevRequest.topic_id == topic.id)
+
+    # Sort options
+    if sort == "recent":
+        query = query.order_by(DevRequest.created_at.desc())
+    elif sort == "priority":
+        query = query.order_by(
+            DevRequest.priority.desc(),
+            (DevRequest.upvotes - DevRequest.downvotes).desc()
+        )
+    else:  # score (default)
+        query = query.order_by(
+            (DevRequest.upvotes - DevRequest.downvotes).desc(),
+            DevRequest.created_at.desc()
+        )
+
+    requests = query.offset(offset).limit(limit).all()
+
+    result = []
+    for r in requests:
+        topic = db.query(Topic).filter(Topic.id == r.topic_id).first()
+        result.append(DevRequestResponse(
+            id=r.id,
+            topic_id=r.topic_id,
+            topic_slug=topic.slug if topic else None,
+            topic_title=topic.title if topic else None,
+            title=r.title,
+            description=r.description,
+            priority=r.priority,
+            request_type=r.request_type,
+            status=r.status,
+            requested_by=r.requested_by,
+            requested_by_type=r.requested_by_type,
+            implemented_by=r.implemented_by,
+            implemented_by_type=r.implemented_by_type,
+            implemented_at=r.implemented_at,
+            implementation_notes=r.implementation_notes,
+            git_commit=r.git_commit,
+            upvotes=r.upvotes or 0,
+            downvotes=r.downvotes or 0,
+            score=(r.upvotes or 0) - (r.downvotes or 0),
+            created_at=r.created_at,
+            updated_at=r.updated_at
+        ))
+
+    return result
+
+
 @app.get("/api/v1/dev-requests/pending", response_model=List[DevRequestResponse])
 def list_all_pending_requests(
     limit: int = 20,
@@ -2446,6 +2525,45 @@ def list_all_pending_requests(
         ))
 
     return result
+
+
+@app.get("/api/v1/dev-requests/{request_id}", response_model=DevRequestResponse)
+def get_dev_request(
+    request_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a single development request by ID.
+    """
+    dev_req = db.query(DevRequest).filter(DevRequest.id == request_id).first()
+    if not dev_req:
+        raise HTTPException(status_code=404, detail=f"Dev request {request_id} not found")
+
+    topic = db.query(Topic).filter(Topic.id == dev_req.topic_id).first()
+
+    return DevRequestResponse(
+        id=dev_req.id,
+        topic_id=dev_req.topic_id,
+        topic_slug=topic.slug if topic else None,
+        topic_title=topic.title if topic else None,
+        title=dev_req.title,
+        description=dev_req.description,
+        priority=dev_req.priority,
+        request_type=dev_req.request_type,
+        status=dev_req.status,
+        requested_by=dev_req.requested_by,
+        requested_by_type=dev_req.requested_by_type,
+        implemented_by=dev_req.implemented_by,
+        implemented_by_type=dev_req.implemented_by_type,
+        implemented_at=dev_req.implemented_at,
+        implementation_notes=dev_req.implementation_notes,
+        git_commit=dev_req.git_commit,
+        upvotes=dev_req.upvotes or 0,
+        downvotes=dev_req.downvotes or 0,
+        score=(dev_req.upvotes or 0) - (dev_req.downvotes or 0),
+        created_at=dev_req.created_at,
+        updated_at=dev_req.updated_at
+    )
 
 
 @app.patch("/api/v1/dev-requests/{request_id}")
