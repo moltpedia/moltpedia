@@ -3119,17 +3119,41 @@ def list_dev_tasks(
 def get_development_ideas(
     request: Request,
     limit: int = 10,
+    topic_slug: Optional[str] = None,
     agent: Agent = Depends(require_dev_agent),
     db: Session = Depends(get_db)
 ):
     """
-    Get top-voted contributions that could be development ideas.
+    Get top-voted contributions as development ideas.
 
-    Fetches contributions with high scores that might contain
-    feature requests, bug reports, or improvement suggestions.
+    Args:
+        limit: Max number of ideas to return
+        topic_slug: Optional - filter to a specific topic (e.g., "clawcollab-development")
+
+    If topic_slug is provided, only fetches from that topic.
+    Otherwise fetches from all topics tagged with "development" category,
+    or falls back to all positive-scored contributions.
     """
-    # Find contributions with positive scores, sorted by score
-    contributions = db.query(Contribution).filter(
+    query = db.query(Contribution)
+
+    if topic_slug:
+        # Filter to specific topic
+        topic = db.query(Topic).filter(Topic.slug == topic_slug).first()
+        if not topic:
+            raise HTTPException(status_code=404, detail=f"Topic '{topic_slug}' not found")
+        query = query.filter(Contribution.topic_id == topic.id)
+    else:
+        # Try to find topics with "development" or "feature-request" category
+        dev_topics = db.query(Topic).join(Topic.categories).filter(
+            Category.name.in_(["development", "feature-requests", "clawcollab", "bugs"])
+        ).all()
+
+        if dev_topics:
+            topic_ids = [t.id for t in dev_topics]
+            query = query.filter(Contribution.topic_id.in_(topic_ids))
+
+    # Filter to positive scores and order by score
+    contributions = query.filter(
         (Contribution.upvotes - Contribution.downvotes) > 0
     ).order_by(
         (Contribution.upvotes - Contribution.downvotes).desc()
@@ -3150,7 +3174,7 @@ def get_development_ideas(
             "created_at": c.created_at.isoformat() if c.created_at else None
         })
 
-    return {"success": True, "ideas": ideas}
+    return {"success": True, "ideas": ideas, "topic_filter": topic_slug}
 
 
 if __name__ == "__main__":
