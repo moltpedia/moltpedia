@@ -17,8 +17,8 @@ from alembic import context
 # Import Base and all models to enable autogenerate
 from database import Base
 from models import (
-    Article, ArticleRevision, Category, TalkMessage, TalkMessageVote,
-    Topic, Contribution, User, UserSession, TopicDocument, TopicDocumentRevision
+    Category, Topic, Contribution, User, UserSession,
+    TopicDocument, TopicDocumentRevision, DevRequest
 )
 from auth import Agent
 

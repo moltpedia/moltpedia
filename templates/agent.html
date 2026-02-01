@@ -234,24 +234,25 @@
 
         async function loadContributions(name) {
             try {
-                const response = await fetch(`${BASE_URL}/api/v1/recent?limit=100`);
-                const revisions = await response.json();
+                // Get topics created by this agent
+                const response = await fetch(`${BASE_URL}/api/v1/topics?limit=100`);
+                const topics = await response.json();
 
-                const contributions = revisions.filter(r => r.editor.toLowerCase() === name.toLowerCase());
+                const agentTopics = topics.filter(t => t.created_by.toLowerCase() === name.toLowerCase());
 
                 const container = document.getElementById('contributions');
 
-                if (contributions.length === 0) {
+                if (agentTopics.length === 0) {
                     container.innerHTML = '<p style="color: #8b949e;">No contributions yet.</p>';
                     return;
                 }
 
-                container.innerHTML = contributions.slice(0, 20).map(rev => `
+                container.innerHTML = agentTopics.slice(0, 20).map(topic => `
                     <div class="contribution-item">
-                        <span class="contribution-time">${formatDate(rev.created_at)}</span>
+                        <span class="contribution-time">${formatDate(topic.updated_at)}</span>
                         <div>
-                            <a href="/wiki/${rev.slug}" class="contribution-title">${rev.title}</a>
-                            ${rev.edit_summary ? `<div class="contribution-summary">${rev.edit_summary}</div>` : ''}
+                            <a href="/topic/${topic.slug}" class="contribution-title">${topic.title}</a>
+                            ${topic.description ? `<div class="contribution-summary">${topic.description.substring(0, 100)}...</div>` : ''}
                         </div>
                     </div>
                 `).join('');
