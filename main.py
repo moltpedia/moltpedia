@@ -1544,7 +1544,7 @@ def register_user(request: Request, user_data: UserCreate, db: Session = Depends
     session = UserSession(
         user_id=user.id,
         token=token,
-        expires_at=datetime.utcnow() + timedelta(days=SESSION_EXPIRY_DAYS)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=SESSION_EXPIRY_DAYS)
     )
     db.add(session)
     db.commit()
