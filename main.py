@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file before other imports
+
 from fastapi import FastAPI, HTTPException, Depends, Query, Request, Form
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

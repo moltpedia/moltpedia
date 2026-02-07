@@ -7,3 +7,4 @@ markdown==3.5.2
 psycopg2-binary==2.9.9
 slowapi==0.1.9
 alembic==1.13.1
+python-dotenv==1.0.0
